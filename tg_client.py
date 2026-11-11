@@ -60,12 +60,12 @@ class TelegramService:
 
     async def qr_wait(self, password=None):
         from telethon.errors import SessionPasswordNeededError
-        try:
-            await self._qr.wait()
-        except SessionPasswordNeededError:
-            if not password:
-                raise
-            await self.client.sign_in(password=password)
+        await self._qr.wait()
+        self.authorized = await self.client.is_user_authorized()
+        return self.authorized
+
+    async def qr_password(self, password):
+        await self.client.sign_in(password=password)
         self.authorized = await self.client.is_user_authorized()
         return self.authorized
 
