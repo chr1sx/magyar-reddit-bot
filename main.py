@@ -98,7 +98,6 @@ class App(tk.Tk):
         ttk.Button(lf2, text="Browse", command=self.browse_dir).grid(row=1, column=2, padx=2)
         self.title_template = self._entry_row(lf2, "Title template", 2)
         ttk.Label(lf2, text="Tokens: {caption} {date} {id}").grid(row=3, column=0, columnspan=3, sticky="w", padx=4)
-        self.auto_interval = self._entry_row(lf2, "Auto interval (min)", 4)
 
         ttk.Button(f, text="Save config", command=self.save_cfg).pack(pady=6)
 
@@ -127,6 +126,27 @@ class App(tk.Tk):
         ttk.Button(auto, text="Stop auto", command=self.stop_auto).pack(side="left", padx=2)
         self.auto_status = ttk.Label(auto, text="auto: off")
         self.auto_status.pack(side="left", padx=6)
+
+        sf = ttk.LabelFrame(f, text="Auto scan settings")
+        sf.pack(fill="x", padx=6, pady=2)
+        r1 = ttk.Frame(sf); r1.pack(fill="x", pady=2)
+        ttk.Label(r1, text="ЙОБЛИК hours:").pack(side="left")
+        self.yoblik_start = tk.StringVar()
+        self.yoblik_end = tk.StringVar()
+        ttk.Entry(r1, textvariable=self.yoblik_start, width=4).pack(side="left", padx=2)
+        ttk.Label(r1, text="to").pack(side="left")
+        ttk.Entry(r1, textvariable=self.yoblik_end, width=4).pack(side="left", padx=2)
+        ttk.Label(r1, text="   Йобла тижня hours:").pack(side="left")
+        self.weekly_start = tk.StringVar()
+        self.weekly_end = tk.StringVar()
+        ttk.Entry(r1, textvariable=self.weekly_start, width=4).pack(side="left", padx=2)
+        ttk.Label(r1, text="to").pack(side="left")
+        ttk.Entry(r1, textvariable=self.weekly_end, width=4).pack(side="left", padx=2)
+        r2 = ttk.Frame(sf); r2.pack(fill="x", pady=2)
+        ttk.Label(r2, text="Scan interval (min):").pack(side="left")
+        self.auto_interval = tk.StringVar()
+        ttk.Entry(r2, textvariable=self.auto_interval, width=6).pack(side="left", padx=4)
+        ttk.Button(r2, text="Save", command=self.save_cfg).pack(side="left", padx=4)
 
         paned = ttk.PanedWindow(f, orient="horizontal")
         paned.pack(fill="both", expand=True, padx=6, pady=4)
@@ -212,7 +232,11 @@ class App(tk.Tk):
         self.subreddit.set(c.get("subreddit", "UkraineWarVideoReport"))
         self.download_dir.set(c.get("download_dir", ""))
         self.title_template.set(c.get("title_template", "{caption}"))
-        self.auto_interval.set(str(c.get("auto_interval_min", 60)))
+        self.auto_interval.set(str(c.get("auto_interval_min", 30)))
+        self.yoblik_start.set(str(c.get("yoblik_start_hour", 7)))
+        self.yoblik_end.set(str(c.get("yoblik_end_hour", 12)))
+        self.weekly_start.set(str(c.get("weekly_start_hour", 18)))
+        self.weekly_end.set(str(c.get("weekly_end_hour", 21)))
 
     def save_cfg(self):
         global cfg
@@ -232,7 +256,17 @@ class App(tk.Tk):
         try:
             cfg["auto_interval_min"] = int(self.auto_interval.get().strip())
         except Exception:
-            cfg["auto_interval_min"] = 60
+            cfg["auto_interval_min"] = 30
+        for key, var, default in [
+            ("yoblik_start_hour", self.yoblik_start, 7),
+            ("yoblik_end_hour", self.yoblik_end, 12),
+            ("weekly_start_hour", self.weekly_start, 18),
+            ("weekly_end_hour", self.weekly_end, 21),
+        ]:
+            try:
+                cfg[key] = int(var.get().strip())
+            except Exception:
+                cfg[key] = default
         save_config(cfg)
         self.log("Config saved.")
 
@@ -439,15 +473,8 @@ class App(tk.Tk):
             self.video_path = path
             self.video_label.config(text=path)
             self.log("Downloaded: %s" % path)
-            # thumbnail
-            try:
-                base = os.path.splitext(path)[0]
-                tp = base + "_thumb.jpg"
-                make_thumbnail(path, tp)
-                self.thumb_path = tp
-                self.thumb_label.config(text=tp)
-            except Exception as e:
-                self.log("Thumbnail failed: %s" % e)
+            self.thumb_path = None
+            self.thumb_label.config(text="(none)")
         self.run_in_thread(fn, done)
 
     # ---------- Post ----------
@@ -498,7 +525,7 @@ class App(tk.Tk):
             except Exception as e:
                 self.log("Auto error: %s" % e)
             # wait interval
-            mins = cfg.get("auto_interval_min", 60)
+            mins = cfg.get("auto_interval_min", 30)
             for _ in range(mins * 60):
                 if self.auto_stop.is_set():
                     break
@@ -508,9 +535,13 @@ class App(tk.Tk):
     def _active_filter_now(self):
         import datetime
         h = datetime.datetime.now().hour
-        if 7 <= h < 12:
+        ys = cfg.get("yoblik_start_hour", 7)
+        ye = cfg.get("yoblik_end_hour", 12)
+        ws = cfg.get("weekly_start_hour", 18)
+        we = cfg.get("weekly_end_hour", 21)
+        if ys <= h < ye:
             return "ЙОБЛИК"
-        if 18 <= h < 21:
+        if ws <= h < we:
             return "Йобла тижня"
         return None
 
@@ -533,15 +564,7 @@ class App(tk.Tk):
                 break
             self.log("Auto processing post %s" % p["id"])
             path = tg.call(tg.download(channel, p["id"], dest))
-            # thumbnail
             tp = None
-            try:
-                base = os.path.splitext(path)[0]
-                tp = base + "_thumb.jpg"
-                make_thumbnail(path, tp)
-            except Exception as e:
-                self.log("thumb fail: %s" % e)
-                tp = None
             pub_date = self._fmt_date(p["date"])
             res = process(p["caption"], pub_date)
             title = res["title"]
