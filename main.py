@@ -1,6 +1,6 @@
-import os, sys, json, threading, queue
+import os, sys, json, threading, queue, urllib.request, urllib.parse, io
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import (load_config, save_config, load_posted, save_posted,
@@ -65,6 +65,7 @@ class App(tk.Tk):
         self.tg_code = tk.StringVar()
         ttk.Entry(btns, textvariable=self.tg_code, width=12).pack(side="left", padx=2)
         ttk.Button(btns, text="Sign in", command=self.on_tg_signin).pack(side="left", padx=2)
+        ttk.Button(btns, text="QR login", command=self.on_tg_qr).pack(side="left", padx=2)
         self.tg_password = self._entry_row(lf, "2FA password (optional)", 4, show="*")
         self.tg_status = ttk.Label(lf, text="not connected")
         self.tg_status.grid(row=5, column=0, columnspan=2, sticky="w", pady=2)
@@ -276,6 +277,62 @@ class App(tk.Tk):
             self.tg_status.config(text=("authorized" if res else "not authorized"))
             self.log("Sign in: %s" % res)
         self.run_in_thread(fn, done)
+
+    def on_tg_qr(self):
+        self.save_cfg()
+        def fn():
+            if tg.client is None:
+                tg.call(tg.connect(cfg["tg"]["api_id"], cfg["tg"]["api_hash"]))
+            return tg.call(tg.qr_start())
+        def done(url):
+            self._show_qr(url)
+            threading.Thread(target=self._qr_wait_worker, daemon=True).start()
+        self.run_in_thread(fn, done)
+
+    def _show_qr(self, url):
+        try:
+            api = "https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=" + urllib.parse.quote(url, safe="")
+            with urllib.request.urlopen(api, timeout=20) as resp:
+                data = resp.read()
+            from PIL import Image, ImageTk
+            img = Image.open(io.BytesIO(data))
+            photo = ImageTk.PhotoImage(img)
+        except Exception as e:
+            self.log("QR image failed: %s" % e)
+            messagebox.showerror("QR", str(e))
+            return
+        win = tk.Toplevel(self)
+        win.title("Scan QR with Telegram")
+        lbl = ttk.Label(win, image=photo)
+        lbl.image = photo
+        lbl.pack(padx=10, pady=10)
+        ttk.Label(win, text="On your already-logged-in Telegram app: Settings -> Devices -> Link Desktop Device, then scan.").pack(padx=10, pady=5)
+        ttk.Label(win, text=url, wraplength=300).pack(padx=10, pady=5)
+        self._qr_window = win
+
+    def _qr_wait_worker(self):
+        pw = self.tg_password.get().strip() or None
+        try:
+            res = tg.call(tg.qr_wait(pw))
+            self.after(0, lambda r=res: self._qr_done(r))
+        except Exception as e:
+            self.log("QR login error: %s" % e)
+            self.after(0, lambda e=e: self._qr_password_prompt(e))
+
+    def _qr_done(self, res):
+        self.tg_status.config(text=("authorized" if res else "not authorized"))
+        self.log("QR login: %s" % res)
+        if getattr(self, "_qr_window", None):
+            try:
+                self._qr_window.destroy()
+            except Exception:
+                pass
+
+    def _qr_password_prompt(self, e):
+        pw = simpledialog.askstring("2FA Password", "Enter your 2FA password:")
+        if pw:
+            self.tg_password.set(pw)
+            threading.Thread(target=self._qr_wait_worker, daemon=True).start()
 
     # ---------- Reddit actions ----------
     def on_rd_test(self):
