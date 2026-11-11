@@ -82,13 +82,29 @@ def build_daily_description(info):
             total=f"{info['range_total']:,}"))
     return "\n".join(parts)
 
-def build_daily_title(info, pub_date):
+MULTI_PREFIXES = ["три", "ду", "квадро", "quattro", "тріо", "дупо", "дует", "дуо", "стейк", "фарш"]
+
+def is_multi_variant(caption):
+    c = (caption or "").lower()
+    idx = c.find("йоблик")
+    if idx < 0:
+        return False
+    prefix = c[:idx]
+    return any(p in prefix for p in MULTI_PREFIXES)
+
+def build_daily_title(info, pub_date, plural=False):
     if info["day"] is None or info["day_count"] is None:
         return None
-    title = ("Elimination of russian invaders by operators of the Ukrainian 414th UAS Brigade "
-             "\u201cMagyar\u2019s Birds.\u201d "
-             "On {month} {day}, \u201cMagyar\u2019s Birds\u201d eliminated {day_count} occupiers".format(
-                 month=info["month"], day=info["day"], day_count=info["day_count"]))
+    if plural:
+        title = ("Elimination of russian invaders by operators of the Ukrainian 414th UAS Brigade "
+                 "\u201cMagyar\u2019s Birds.\u201d "
+                 "On {month} {day}, \u201cMagyar\u2019s Birds\u201d eliminated {day_count} occupiers".format(
+                     month=info["month"], day=info["day"], day_count=info["day_count"]))
+    else:
+        title = ("A russian invader was eliminated by operators of the Ukrainian 414th UAS Brigade "
+                 "\u201cMagyar\u2019s Birds.\u201d "
+                 "On {month} {day}, \u201cMagyar\u2019s Birds\u201d eliminated {day_count} occupiers".format(
+                     month=info["month"], day=info["day"], day_count=info["day_count"]))
     if info["range_start"] is not None and info["range_end"] is not None and info["range_total"] is not None:
         title += (", bringing the total for {month} {start}\u2013{end} to {total:,}.".format(
             month=info["month"], start=info["range_start"], end=info["range_end"],
@@ -118,7 +134,7 @@ def process(caption, pub_date):
         return {"type": kind, "info": info, "title": title, "description": desc}
     if kind == "daily":
         info = parse_daily(caption)
-        title = build_daily_title(info, pub_date)
+        title = build_daily_title(info, pub_date, plural=is_multi_variant(caption))
         desc = build_daily_description(info)
         return {"type": kind, "info": info, "title": title, "description": desc}
     return {"type": "other", "info": None, "title": None, "description": caption}
