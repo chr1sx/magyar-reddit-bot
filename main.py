@@ -320,13 +320,32 @@ class App(tk.Tk):
         self._qr_window = win
 
     def _qr_wait_worker(self):
-        pw = self.tg_password.get().strip() or None
         try:
-            res = tg.call(tg.qr_wait(pw))
+            res = tg.call(tg.qr_wait())
             self.after(0, lambda r=res: self._qr_done(r))
         except Exception as e:
-            self.log("QR login error: %s" % e)
-            self.after(0, lambda e=e: self._qr_password_prompt(e))
+            self.log("QR login needs 2FA or error: %s" % e)
+            from telethon.errors import SessionPasswordNeededError
+            if isinstance(e, SessionPasswordNeededError):
+                self.after(0, self._qr_ask_password)
+            else:
+                self.after(0, lambda e=e: messagebox.showerror("QR login", str(e)))
+
+    def _qr_ask_password(self):
+        pw = simpledialog.askstring("2FA Password", "Enter your 2FA password:")
+        if not pw:
+            return
+        self.tg_password.set(pw)
+        threading.Thread(target=self._qr_password_worker, daemon=True).start()
+
+    def _qr_password_worker(self):
+        pw = self.tg_password.get().strip()
+        try:
+            res = tg.call(tg.qr_password(pw))
+            self.after(0, lambda r=res: self._qr_done(r))
+        except Exception as e:
+            self.log("2FA failed: %s" % e)
+            self.after(0, lambda e=e: messagebox.showerror("2FA", str(e)))
 
     def _qr_done(self, res):
         self.tg_status.config(text=("authorized" if res else "not authorized"))
@@ -336,12 +355,6 @@ class App(tk.Tk):
                 self._qr_window.destroy()
             except Exception:
                 pass
-
-    def _qr_password_prompt(self, e):
-        pw = simpledialog.askstring("2FA Password", "Enter your 2FA password:")
-        if pw:
-            self.tg_password.set(pw)
-            threading.Thread(target=self._qr_wait_worker, daemon=True).start()
 
     # ---------- Reddit actions ----------
     def on_rd_test(self):
