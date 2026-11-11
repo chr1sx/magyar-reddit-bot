@@ -65,10 +65,12 @@ def classify(caption):
     c = caption or ""
     if WEEKLY_PAT.search(c):
         return "weekly"
-    if "ЙОБЛИК" in c.upper() or "Йобла" in c:
-        # daily if has Протягом with a number
-        if re.search(r'Протягом', c, re.I):
-            return "daily"
+    if "ЙОБЛИК" in c.upper():
+        return "daily"
+    if "Йобла" in c:
+        # weekly if matches weekly pattern
+        if WEEKLY_PAT.search(c):
+            return "weekly"
     return "other"
 
 def build_daily_description(info):
@@ -93,18 +95,17 @@ def is_multi_variant(caption):
     return any(p in prefix for p in MULTI_PREFIXES)
 
 def build_daily_title(info, pub_date, plural=False):
-    if info["day"] is None or info["day_count"] is None:
-        return None
     if plural:
-        title = ("Elimination of russian invaders by operators of the Ukrainian 414th UAS Brigade "
-                 "\u201cMagyar\u2019s Birds.\u201d "
-                 "On {month} {day}, \u201cMagyar\u2019s Birds\u201d eliminated {day_count} occupiers".format(
-                     month=info["month"], day=info["day"], day_count=info["day_count"]))
+        base = "Elimination of russian invaders by operators of the Ukrainian 414th UAS Brigade \u201cMagyar\u2019s Birds.\u201d"
     else:
-        title = ("A russian invader was eliminated by operators of the Ukrainian 414th UAS Brigade "
-                 "\u201cMagyar\u2019s Birds.\u201d "
-                 "On {month} {day}, \u201cMagyar\u2019s Birds\u201d eliminated {day_count} occupiers".format(
-                     month=info["month"], day=info["day"], day_count=info["day_count"]))
+        base = "A russian invader was eliminated by operators of the Ukrainian 414th UAS Brigade \u201cMagyar\u2019s Birds.\u201d"
+    # No elimination numbers available -> omit the occupier clause.
+    if info.get("day_count") is None:
+        return "{base} Published {date}".format(base=base, date=pub_date)
+    if info.get("day") is None:
+        return "{base} Published {date}".format(base=base, date=pub_date)
+    title = "{base} On {month} {day}, \u201cMagyar\u2019s Birds\u201d eliminated {day_count} occupiers".format(
+        base=base, month=info["month"], day=info["day"], day_count=info["day_count"])
     if info["range_start"] is not None and info["range_end"] is not None and info["range_total"] is not None:
         title += (", bringing the total for {month} {start}\u2013{end} to {total:,}.".format(
             month=info["month"], start=info["range_start"], end=info["range_end"],
