@@ -505,16 +505,28 @@ class App(tk.Tk):
                 threading.Event().wait(1)
         self.after(0, lambda: self.auto_status.config(text="auto: off"))
 
+    def _active_filter_now(self):
+        import datetime
+        h = datetime.datetime.now().hour
+        if 7 <= h < 12:
+            return "ЙОБЛИК"
+        if 18 <= h < 21:
+            return "Йобла тижня"
+        return None
+
     def _auto_once(self):
         self.save_cfg()
+        flt = self._active_filter_now()
+        if flt is None:
+            self.log("Auto: outside active hours, skipping.")
+            return
         channel = cfg["channel"]
-        flt = cfg["filter_text"]
         dest = cfg["download_dir"] or os.path.join(APP_DIR, "downloads")
         os.makedirs(dest, exist_ok=True)
         posts = tg.call(tg.fetch_posts(channel, 10, flt))
         new_posts = [p for p in posts if str(p["id"]) not in posted_ids]
         if not new_posts:
-            self.log("Auto: no new posts")
+            self.log("Auto: no new posts (%s)" % flt)
             return
         for p in new_posts:
             if self.auto_stop.is_set():
