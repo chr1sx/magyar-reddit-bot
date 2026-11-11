@@ -280,14 +280,22 @@ class App(tk.Tk):
 
     def on_tg_qr(self):
         self.save_cfg()
+        self.log("Starting QR login...")
         def fn():
             if tg.client is None:
+                self.log("Connecting to Telegram...")
                 tg.call(tg.connect(cfg["tg"]["api_id"], cfg["tg"]["api_hash"]))
-            return tg.call(tg.qr_start())
+            url = tg.call(tg.qr_start())
+            self.log("QR URL generated.")
+            return url
         def done(url):
+            self.log("Showing QR code...")
             self._show_qr(url)
             threading.Thread(target=self._qr_wait_worker, daemon=True).start()
-        self.run_in_thread(fn, done)
+        def err(e):
+            self.log("QR login failed: %s" % e)
+            messagebox.showerror("QR login", str(e))
+        self.run_in_thread(fn, done, err)
 
     def _show_qr(self, url):
         try:
@@ -303,6 +311,7 @@ class App(tk.Tk):
             return
         win = tk.Toplevel(self)
         win.title("Scan QR with Telegram")
+        win.attributes("-topmost", True)
         lbl = ttk.Label(win, image=photo)
         lbl.image = photo
         lbl.pack(padx=10, pady=10)
