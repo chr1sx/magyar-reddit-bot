@@ -8,6 +8,7 @@ class TelegramService:
         self.client = None
         self.authorized = False
         self.phone = None
+        self._qr = None
 
     def _ensure_loop(self):
         if self.thread is not None and self.thread.is_alive():
@@ -46,6 +47,21 @@ class TelegramService:
         from telethon.errors import SessionPasswordNeededError
         try:
             await self.client.sign_in(self.phone, code)
+        except SessionPasswordNeededError:
+            if not password:
+                raise
+            await self.client.sign_in(password=password)
+        self.authorized = await self.client.is_user_authorized()
+        return self.authorized
+
+    async def qr_start(self):
+        self._qr = await self.client.qr_login()
+        return self._qr.url
+
+    async def qr_wait(self, password=None):
+        from telethon.errors import SessionPasswordNeededError
+        try:
+            await self._qr.wait()
         except SessionPasswordNeededError:
             if not password:
                 raise
